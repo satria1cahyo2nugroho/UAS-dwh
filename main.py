@@ -1,8 +1,14 @@
-from flask import Flask
+from flask import Flask,send_file,request
 from flask_restx import Resource, Api, reqparse
+from flask_cors import CORS
+from werkzeug.datastructures import FileStorage
+from werkzeug.utils import secure_filename
+import os, subprocess
 
 app = Flask(__name__) # Flask object instantiation..
+CORS(app ,supports_credentials=True)
 api = Api(app) # Flask-restx object instantiation..
+
 
 ####################
 # BEGIN: Database #
@@ -178,24 +184,22 @@ authParser.add_argument('Authorization', type=str, help='Authorization', locatio
 #@api.route('/user')
 #class DetailUser(Resource):
 #       @api.expect(authParser)
- #      def get(self):
-  #      args = authParser.parse_args()
-  #      bearerAuth  = args['Authorization']
-  #      try:
-  #          jwtToken    = bearerAuth[7:]
-#         token = decodetoken(jwtToken)
-   #         user =  db.session.execute(db.select(User).filter_by(email=token['user_email'])).first()
-    #        user = user[0]
-     #       data = {
-     #           'name' : user.name,
-      #          'email' : user.email
-       #     }
-        #except:
-         #   return {
-         #       'message' : 'Token Tidak valid,Silahkan Login Terlebih Dahulu!'
-          #  }, 401
-
-        #return data, 200
+#       def get(self):
+#	       args = authParser.parse_args()
+#	       bearerAuth  = args['Authorization']
+#	       try:
+#		       jwtToken    = bearerAuth[7:]
+#		       token = decodetoken(jwtToken)
+#		       user =  db.session.execute(db.select(User).filter_by(email=token['user_email'])).first()
+#		       user = user[0]
+#		       data = {
+#			       'name' : user.name,
+#				   'email' : user.email
+#           }
+#		       except:
+#		       return {
+#			       'message' : 'Token Tidak valid,Silahkan Login Terlebih Dahulu!'}, 401
+#		       return data {'message' : 'melihat data User Sukses'}, 200
        
 editParser = reqparse.RequestParser()
 editParser.add_argument('email', type=str, help='email', location='json', required=True)
@@ -252,6 +256,35 @@ class Password(Resource):
                 'message' : 'Token Tidak valid! Silahkan, Sign in!'
             }, 401
         return {'message' : 'Password Berhasil Diubah'}, 200
+    
+
+
+ALLOWED_EXTENSIONS = {'3gp', 'mkv', 'avi', 'mp4'}
+def allowed_file(filename):
+	return '.' in filename and \
+		filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+detectParser = api.parser()
+detectParser.add_argument('video', location='files', type=FileStorage, required=True)
+@api.route('/detect')
+class Detect(Resource):
+    @api.expect(detectParser)
+    def post(self):
+        args = detectParser.parse_args()
+        video = args['video']
+        if video and allowed_file(video.filename):
+            filename = secure_filename(video.filename)
+            video.save(os.path.join("./video", filename))
+            subprocess.run(['python', 'detect.py', '--source', f'./video/{filename}', '--weights', 'best.pt', '--name', f'{filename}','--conf 0.3', '--img-size 640'])
+            print('success predict')
+            os.remove(f'./video/{filename}')
+            print('success remove')
+            return send_file(os.path.join(f"./runs/detect/{filename}", filename), mimetype='video/mp4', as_attachment=True, download_name=filename)
+        else:
+            return {'message' : 'invalid file extension'},400
+
+
+
 
 if __name__ == '__main__':
-    app.run(ssl_context='adhoc', debug=True)
+    app.run(host='0.0.0.0',ssl_context='adhoc', debug=True)
